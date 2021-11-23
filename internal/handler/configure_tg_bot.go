@@ -5,28 +5,28 @@ package handler
 import (
 	"crypto/tls"
 	"net/http"
-	_ "os"
+	"os"
 
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/runtime/middleware"
-	// "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 
 	"github.com/romaxa83/tg-bot/internal/handler/operations"
-	// custMid "github.com/romaxa83/tg-bot/internal/middleware"
+	custMid "github.com/romaxa83/tg-bot/internal/middleware"
 	"github.com/romaxa83/tg-bot/internal/worker"
-
+	"github.com/romaxa83/tg-bot/pkg/logger"
 	log "github.com/romaxa83/tg-bot/pkg/logger"
 	"github.com/romaxa83/tg-bot/pkg/smap"
 
 	tgbotapi "github.com/Syfaro/telegram-bot-api"
 	formatters "github.com/fabienm/go-logrus-formatters"
-	// graylog "github.com/gemnasium/logrus-graylog-hook/v3"
+	graylog "github.com/gemnasium/logrus-graylog-hook/v3"
 )
 
 const (
 	MSGS_BUFFER  = 10
-	SERVICE_NAME = "telegram-bot"
+	SERVICE_NAME = "tg-bot"
 )
 
 //go:generate swagger generate server --target ../../../tg-bot --name TgBot --spec ../../api/api.yml --server-package internal/handler --principal interface{}
@@ -40,8 +40,8 @@ func configureAPI(api *operations.TgBotAPI) http.Handler {
 	api.ServeError = errors.ServeError
 
 	fmter := formatters.NewGelf(SERVICE_NAME)
-	// hooks := []logrus.Hook{graylog.NewGraylogHook(os.Getenv("GRAYLOG_HOST"), map[string]interface{}{})}
-	logger := log.NewLogger(fmter)
+	hooks := []logrus.Hook{graylog.NewGraylogHook(os.Getenv("GRAYLOG_HOST"), map[string]interface{}{})}
+	logger := log.NewLogger(fmter, hooks)
 
 	api.Logger = logger.Printf
 
@@ -54,10 +54,9 @@ func configureAPI(api *operations.TgBotAPI) http.Handler {
 	botApi, err := tgbotapi.NewBotAPI("828547999:AAG9v8lFP25eD8iDoxL3wqGgtnlXxZHBI_s")
 	// botApi, err := tgbotapi.NewBotAPI(os.Getenv("TELEGRAM_BOT_KEY"))
 	if err != nil {
-		panic(err)
-		// logger.WithFields(
-		// logger.TraceWrap(err),
-		// ).Panic(err)
+		logger.WithFields(
+			logger.TraceWrap(err),
+		).Panic(err)
 	}
 
 	bot := worker.NewTelBot(logger, users, botApi)
@@ -81,7 +80,7 @@ func configureAPI(api *operations.TgBotAPI) http.Handler {
 
 	api.ServerShutdown = func() {}
 
-	return setupGlobalMiddleware(api.Serve(setupMiddlewares))
+	return setupGlobalMiddleware(logger, api.Serve(setupMiddlewares))
 }
 
 // The TLS configuration before HTTPS server starts.
@@ -102,8 +101,12 @@ func setupMiddlewares(handler http.Handler) http.Handler {
 	return handler
 }
 
+// здесь подключаем свои мидлевары
 // The middleware configuration happens before anything, this middleware also applies to serving the swagger.json document.
 // So this is a good place to plug in a panic handling middleware, logging and metrics.
-func setupGlobalMiddleware(handler http.Handler) http.Handler {
-	return handler
+func setupGlobalMiddleware(logger logger.Logger, handler http.Handler) http.Handler {
+	md := &custMid.Middleware{
+		L: logger,
+	}
+	return md.LogRequests(md.RecoverMiddleware(handler))
 }

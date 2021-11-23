@@ -1,5 +1,6 @@
 package logger
 
+// оберта для logrus
 import (
 	"fmt"
 
@@ -7,8 +8,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// создаем свой интерфейс для логера
 type Logger interface {
+	// встраиваем интерфейс logrus
 	logrus.FieldLogger
+	// добавляем трейс
 	TraceWrap(error) logrus.Fields
 }
 
@@ -23,14 +27,15 @@ func (l *Log) TraceWrap(err error) logrus.Fields {
 	}
 }
 
-func NewLogger(fmter logrus.Formatter) Logger {
+// форматер - форматирует логи, hooks - отдать логи сторонему сервису
+func NewLogger(fmter logrus.Formatter, hooks []logrus.Hook) Logger {
 	log := &Log{
 		logrus.New(),
 	}
 	log.Formatter = fmter
-	// for _, h := range hooks {
-	// 	log.AddHook(h)
-	// }
+	for _, h := range hooks {
+		log.AddHook(h)
+	}
 
 	return log
 }
